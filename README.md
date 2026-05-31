@@ -1,169 +1,165 @@
-# C Library for LCD 1602 with expander I2C
+# hd44780_pcf8574
 
-Library used I/O expander PCF8574 to control 1602 LCD display with HD44780 driver via I2C communication protocol. 
-Main aim is reduce number of hardware connection and safe pins of microcontroller.
+HD44780 character LCD driver for displays connected via a PCF8574 I2C I/O expander, in 4-bit mode.
 
-## HD44780 Description
-Detailed information is in [HD44780 Datasheet](https://www.sparkfun.com/datasheets/LCD/HD44780.pdf).
+Forked from [HD44780_PCF8574](https://github.com/Matiasus/HD44780_PCF8574) by Marian Hrinko and heavily modified. The AVR TWI transport, AVR-specific timing, and all `<avr/*>` dependencies have been removed. The core driver (`lib/src/hd44780.c`) is portable C99 with a small platform interface you implement once per target.
 
-## PCF8574 Description
-Detailed information is in [PCF8574 Datasheet](https://www.nxp.com/docs/en/data-sheet/PCF8574_PCF8574A.pdf).
+---
 
-## Hardware connection
-| PCF8574 PIN | ATMEGA328 PIN | ARDUINO UNO PIN | Description |
-| :---: | :---: | :---: |  :---: |
-| UCC | +5V | +5V | Supply Voltage |
-| USS | GND | GND | Ground |
-| SDA | PC4 | A4 | Data |
-| SCL | PC5 | A5 | Clock |
+## Hardware
 
-## Library
-Library is aimed for MCU ATmega328 / Atmega8 which supports [4-bit Operation](#initializing-4-bit-operation).
+The PCF8574 has 8 open-drain I/O pins (P0-P7) wired to the HD44780 as follows:
 
-### Tested
-Library was tested and proved on a **_16x2 LCD Display_** with **_Atmega328p_**.
+| PCF8574 | HD44780 | Function |
+|:---:|:---:|---|
+| P0 | RS | Register Select: 0 = instruction register, 1 = data register |
+| P1 | RW | Read/Write: held low (write-only operation) |
+| P2 | E | Enable: data is latched on the falling edge |
+| P3 | -- | Backlight: 1 = on |
+| P4 | DB4 | Data bit 4 |
+| P5 | DB5 | Data bit 5 |
+| P6 | DB6 | Data bit 6 |
+| P7 | DB7 | Data bit 7 |
 
-### Usage
-Prior defined for:
-- **_Atmega328p / Atmega8_**
-- **_LCD 16x2_**
+Default I2C address: `0x27` (`PCF8574_DEFAULT_ADDR`). This is the most common address for commercial backpacks with A0-A2 pulled high. Some PCF8574A-based modules use `0x3F`; verify against your hardware.
 
-### Initializing 4-bit operation
+---
 
-Initializing LCD Driver HD44780 according to Figure 24 in [HD44780 Datasheet](https://www.sparkfun.com/datasheets/LCD/HD44780.pdf).
- ```c
-// +---------------------------+
-// |         Power on          |
-// | Wait for more than 15 ms  |   // 15 ms wait
-// | after VCC rises to 4.5 V  |
-// +---------------------------+
-//              |
-// +---------------------------+ 
-// |  RS R/W DB7 DB6 DB5 DB4   |
-// |   0   0   0   0   1   1   |   // Initial sequence 0x30
-// | Wait for more than 4.1 ms |   // 4.1 ms us writing DATA into DDRAM or CGRAM
-// +---------------------------+
-//              |
-// +---------------------------+
-// |  RS R/W DB7 DB6 DB5 DB4   |
-// |   0   0   0   0   1   1   |   // Initial sequence 0x30
-// | Wait for more than 0.1 ms |   // 100 us writing DATA into DDRAM or CGRAM
-// +---------------------------+
-//              |
-// +---------------------------+   // Initial sequence 0x30
-// |  RS R/W DB7 DB6 DB5 DB4   |   // 37 us writing DATA into DDRAM or CGRAM
-// |   0   0   0   0   1   1   |   // 4us tadd - time after BF disapeared
-// | Wait for more than 45 us  |   // 37 us + 4 us = 41 us * (270/250) = 45us
-// +---------------------------+
-//              |
-// +---------------------------+   // 4bit mode 0x20
-// |  RS R/W DB7 DB6 DB5 DB4   |   // 37 us writing DATA into DDRAM or CGRAM
-// |   0   0   0   0   1   0   |   // 4us tadd - time after BF disapeared
-// | Wait for more than 45 us  |   // !!! BUSY FLAG CHECK DOESN'T WORK CORRECTLY !!!
-// +---------------------------+
-//              |
-// +---------------------------+
-// |  RS R/W DB7 DB6 DB5 DB4   |   // Display off 0x08
-// |   0   0   0   0   0   0   |   // 
-// |   0   0   1   0   0   0   |   // 
-// |    Wait for BF Cleared    |   // Wait for 50us
-// +---------------------------+
-//              |
-// +---------------------------+
-// |  RS R/W DB7 DB6 DB5 DB4   |   // Display clear 0x01
-// |   0   0   0   0   0   0   |   //
-// |   0   0   0   0   0   1   |   //
-// |    Wait for BF Cleared    |   // Wait for 50us
-// +---------------------------+
-//              |
-// +---------------------------+
-// |  RS R/W DB7 DB6 DB5 DB4   |   // Entry mode set 0x06
-// |   0   0   0   0   0   0   |   // 
-// |   0   0   0   1   1   0   |   // shift cursor to the left, without text shifting
-// |    Wait for BF Cleared    |   // Wait for 50us
-// +---------------------------+
+## File tree
+
 ```
-## Functions
+lib/
+├── inc/
+│   ├── implement/              Headers you must implement for your platform.
+│   │   │                       Add one .c file to your build per header.
+│   │   ├── delay.h             Blocking delay interface (delay_init, delay_us, delay_ms)
+│   │   └── pcf8574_i2c.h       I2C I/O expander interface (pcf8574_init, pcf8574_write, pcf8574_read)
+│   └── hd44780.h               Public HD44780 API — include this in your application.
+└── src/
+    ├── hd44780.c               Portable HD44780 core driver. No platform dependencies.
+    └── examples/               Reference implementations. Do not compile these directly;
+        │                       copy the relevant subdirectory and adapt for your project.
+        └── silabs/
+            └── gecko_sdk/      Silicon Labs EFR32 using Gecko SDK 4.4.5.
+                ├── delay.c     Implements delay.h using sl_udelay_wait().
+                └── pcf8574_i2c.c  Implements pcf8574_i2c.h using I2CSPM (instance: pcf8574).
+```
 
-- [HD44780_PCF8574_Init()](#hd44780_pcf8574_init) - init display
-- [HD44780_PCF8574_DisplayClear()](#hd44780_pcf8574_displayclear) - clear display and set position to 0, 0
-- [HD44780_PCF8574_DisplayOn()](#hd44780_pcf8574_displayon) - turn on display
-- [HD44780_PCF8574_CursorOn()](#hd44780_pcf8574_cursoron) - turn on cursor
-- [HD44780_PCF8574_CursorBlink()](#hd44780_pcf8574_cursorblink) - blink the cursor blink
-- [HD44780_PCF8574_DrawChar(char)](#hd44780_pcf8574_drawchar) - draw character on display
-- [HD44780_PCF8574_DrawString(char *)](#hd44780_pcf8574_drawstring) - draw string
-- [HD44780_PCF8574_PositionXY(char, char)](#hd44780_pcf8574_positionxy) - set position X, Y
-- [HD44780_PCF8574_Shift(char, char)](#hd44780_pcf8574_shift) - shift cursor or display to left or right
+Add `lib/inc/` as an include path in your build. Source files reference the interface headers as `#include "implement/delay.h"` and `#include "implement/pcf8574_i2c.h"`.
 
-### HD44780_PCF8574_Init
+Compile `lib/src/hd44780.c` and your platform `.c` files. The files under `lib/src/examples/` are reference implementations; adapt them for your target rather than adding them to your build directly.
+
+---
+
+## Porting
+
+Provide one `.c` file that implements each header in `lib/inc/implement/`.
+
+### `implement/delay.h`
+
 ```c
-void HD44780_PCF8574_Init (void)
+void delay_init(void);       // one-time setup; leave empty if not needed
+void delay_us(uint32_t us);  // block for at least us microseconds
+void delay_ms(uint32_t ms);  // block for at least ms milliseconds
 ```
-Base initialisation function. If the electrical characteristics conditions listed under the table Power Supply Conditions Using
-Internal Reset Circuit are not met, the internal reset circuit will not operate normally and will fail to initialize the HD44780U. For such a case, initialization must be performed by the MPU as explained in the section [4-bit Operation](#initializing-4-bit-operation) or 8-bit Operation depending on mode.
 
-### HD44780_PCF8574_DisplayClear
+Implementations must busy-wait for at least the requested duration. Overshooting is acceptable; undershooting corrupts LCD state. `delay_init()` is called once before any LCD operations; leave the body empty on platforms where no setup is required.
+
+### `implement/pcf8574_i2c.h`
+
 ```c
-void HD44780_PCF8574_DisplayClear (void)
+void pcf8574_init(void);                           // one-time I2C peripheral setup
+void pcf8574_write(uint8_t addr, uint8_t data);    // write one byte to the output latch
+int  pcf8574_read(uint8_t addr, uint8_t *p_data);  // read pin state; returns 0 on success
 ```
-Display clear and set cursor to position 0, 0.
 
-### HD44780_PCF8574_DisplayOn
+`addr` is the 7-bit I2C device address (not pre-shifted). Each function performs one complete transaction (START, address+R/W, data, STOP).
+
+`pcf8574_init()` is called once at startup. On platforms where the I2C peripheral is initialised elsewhere (for example, Gecko SDK's autogenerated `sl_i2cspm_init.c`), leave the body empty.
+
+`pcf8574_read()` returns the actual logic level on each pin, not the last written value. A pin written 1 that is driven low externally reads 0.
+
+---
+
+## Initialization sequence
+
+`hd44780_init()` follows the power-on procedure from the HD44780 datasheet (Figure 24, p.45). The busy flag is not available during the first three function-set pulses because the display is in an undefined state; fixed delays are used instead.
+
+```
+  Power on
+  Wait > 15 ms (VCC rise)
+
+  RS RW DB7-DB4
+   0  0  0011     Function set, attempt 1 — Wait > 4.1 ms
+   0  0  0011     Function set, attempt 2 — Wait > 100 us
+   0  0  0011     Function set, attempt 3 — Wait > 45 us
+   0  0  0010     Switch to 4-bit mode    — Wait > 45 us
+
+  -- Full 8-bit commands available from here --
+   0  0  00101000   Function set: 4-bit, 2 rows, 5x8 font
+   0  0  00001000   Display off
+   0  0  00000001   Clear display
+   0  0  00000110   Entry mode: cursor right, no display shift
+   0  0  00001100   Display on, cursor off, blink off
+```
+
+Post-instruction delays use a flat 50 ms. The HD44780 requires 37 us for most commands and 1.52 ms for Clear Display; 50 ms covers all cases without per-command branching. At human-scale BLE update rates, the extra latency is not meaningful.
+
+At 100 kbit/s I2C, each byte transaction takes approximately 200 us, which inherently satisfies the 450 ns Enable-pulse minimum specified by the datasheet.
+
+---
+
+## API
+
+Declared in `lib/inc/hd44780.h`. Pass the 7-bit PCF8574 I2C address to every call; this allows multiple displays on one bus.
+
 ```c
-void HD44780_PCF8574_DisplayOn (void)
+int  hd44780_init(uint8_t addr);
+void hd44780_clear(uint8_t addr);
+void hd44780_display_on(uint8_t addr);
+void hd44780_cursor_on(uint8_t addr);
+void hd44780_cursor_blink(uint8_t addr);
+int  hd44780_set_cursor(uint8_t addr, uint8_t col, uint8_t row);
+void hd44780_write_char(uint8_t addr, char c);
+void hd44780_write_string(uint8_t addr, char const *p_str);
 ```
-Turn on the display. 
 
-### HD44780_PCF8574_CursorOn
-```c
-void HD44780_PCF8574_CursorOn (void)
+`hd44780_set_cursor()` returns -1 if col or row is out of range (0-based; 16 columns, 2 rows). `hd44780_write_string()` writes until the null terminator and does not clip at column 15; use `hd44780_set_cursor()` to position before each line.
+
+---
+
+## License and distribution notice
+
+**This repository contains code under two different licenses. Read this section before distributing a product that includes this library.**
+
+### GPL v3 component
+
+The upstream repository ([HD44780_PCF8574 by Marian Hrinko](https://github.com/Matiasus/HD44780_PCF8574)) is licensed under the **GNU General Public License v3 (GPL v3)**. `lib/src/hd44780.c` is a derivative work of that upstream source. As a derivative, it is also governed by GPL v3.
+
+The full GPL v3 text is in `LICENSE`.
+
+**What this means for distribution:** If you ship a product (firmware binary, source release, or otherwise) that includes `lib/src/hd44780.c` or any compiled form of it, the GPL v3 requires you to:
+
+- Make the corresponding source code available to recipients.
+- License that source under GPL v3-compatible terms.
+- Include a copy of the GPL v3 license.
+
+GPL v3 does not prohibit commercial use, but it does prohibit distributing binaries without making source available.
+
+### MIT components
+
+The following files were written from scratch and are not derived from the upstream source. They are provided under the MIT License (Copyright 2026 Stric Roberts):
+
 ```
-Turn on the cursor and display on. Cursor will be visible. IMPORTANT: Function [HD44780_CursorOn()](https://github.com/Matiasus/HD44780#hd44780_cursoron) besides the cursor on, switch the display on, so don't need to use function [HD44780_DisplayOn()](https://github.com/Matiasus/HD44780#hd44780_displayon). But without function [HD44780_CursorOn()](https://github.com/Matiasus/HD44780#hd44780_cursoron) display is switched on by the function [HD44780_DisplayOn()](https://github.com/Matiasus/HD44780#hd44780_displayon).
-
-### HD44780_PCF8574_CursorBlink
-```c
-void HD44780_PCF8574_CursorBlink (void)
+lib/inc/hd44780.h
+lib/inc/implement/delay.h
+lib/inc/implement/pcf8574_i2c.h
+lib/src/examples/silabs/gecko_sdk/delay.c
+lib/src/examples/silabs/gecko_sdk/pcf8574_i2c.c
 ```
-Turn the cursor blink. Cursor will be visible and it will blink. IMPORTANT: Function [HD44780_CursorBlink()](https://github.com/Matiasus/HD44780#hd44780_cursorblink) besides the cursor blink, switch the display on, so don't need to use function [HD44780_DisplayOn()](https://github.com/Matiasus/HD44780#hd44780_displayon). But without function [HD44780_CursorBlink()](https://github.com/Matiasus/HD44780#hd44780_cursorblink) display is switched on by the function [HD44780_DisplayOn()](https://github.com/Matiasus/HD44780#hd44780_displayon).
 
-### HD44780_PCF8574_DrawChar
-```c
-void HD44780_PCF8574_DrawChar (char character)
-```
-Draw specific char on display according to [ASCII table](http://www.asciitable.com/).
+If you write your own `hd44780.c` from scratch (without deriving from the upstream AVR source), you can license it however you choose. Only the components derived from Marian Hrinko's work carry GPL v3 obligations.
 
-### HD44780_PCF8574_DrawString
-```c
-void HD44780_PCF8574_DrawString (char *str)
-```
-Draw string.
+### Gecko SDK example
 
-### HD44780_PCF8574_PositionXY
-```c
-char HD44780_PCF8574_PositionXY (char x, char y)
-```
-Set DDRAM or CGRAM at the specific position X, Y. For LCD 16x2 (cols, rows) maximal possible values:
-- X from interval values {0; 1; ... 15},
-- Y from interval values {0; 1}.
-
-### HD44780_PCF8574_Shift
-```c
-char HD44780_PCF8574_Shift (char item, char direction)
-```
-Shift cursor or display to left or right.
-Item defines either cursor or display we want to move. Two possible values for item are defined:
-- HD44780_CURSOR, 
-- HD44780_DISPLAY.
-
-The second parameter is direction definition. Two possible values for direction are defined:
-- HD44780_RIGHT,
-- HD44780_LEFT.
-
-# Demonstration
-<img src="img/img.jpg" />
-
-# Links
-- [HD44780 Datasheet](https://www.sparkfun.com/datasheets/LCD/HD44780.pdf)
-- [PCF8574 Datasheet NXP](https://www.nxp.com/docs/en/data-sheet/PCF8574_PCF8574A.pdf)
-- [PCF8574 Datasheet TI](https://www.ti.com/lit/ds/symlink/pcf8574.pdf?ts=1606802675229)
-
+The Gecko SDK example files (`lib/src/examples/silabs/gecko_sdk/`) depend on Silicon Labs' Gecko SDK at runtime. The Gecko SDK has its own license terms (see [Silicon Labs Gecko SDK License](https://www.silabs.com/about-us/legal/master-software-license-agreement)). Verify compatibility with your distribution terms before shipping a product that links against it.
